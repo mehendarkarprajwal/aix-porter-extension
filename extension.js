@@ -1,0 +1,378 @@
+const vscode = require('vscode');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+/**
+ * AIX Package Porter Extension
+ * Installs and manages the AIX Package Porter skill for Bob IDE
+ */
+
+// Extension state
+let outputChannel;
+const SKILL_NAME = 'aix-package-porter';
+
+/**
+ * Activate the extension
+ * @param {vscode.ExtensionContext} context
+ */
+function activate(context) {
+    // Create output channel for logging
+    outputChannel = vscode.window.createOutputChannel('AIX Package Porter');
+    outputChannel.appendLine('AIX Package Porter extension activated');
+
+    // Get configuration
+    const config = vscode.workspace.getConfiguration('aixPorter');
+    const autoInstall = config.get('autoInstall', true);
+
+    // Auto-install skill if enabled
+    if (autoInstall) {
+        installSkill(false);
+    }
+
+    // Register commands
+    context.subscriptions.push(
+        vscode.commands.registerCommand('aix-porter.installSkill', () => {
+            installSkill(true);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('aix-porter.reinstallSkill', () => {
+            reinstallSkill();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('aix-porter.uninstallSkill', () => {
+            uninstallSkill();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('aix-porter.showInfo', () => {
+            showSkillInfo();
+        })
+    );
+
+    // Dispose output channel on deactivation
+    context.subscriptions.push(outputChannel);
+}
+
+/**
+ * Install the AIX Package Porter skill
+ * @param {boolean} showMessage - Whether to show completion message
+ */
+function installSkill(showMessage = true) {
+    try {
+        outputChannel.appendLine('Starting skill installation...');
+
+        // Get skill installation path
+        const skillPath = getSkillPath();
+        if (!skillPath) {
+            throw new Error('Could not determine skill installation path');
+        }
+
+        // Get source path
+        const sourcePath = getSourcePath();
+        if (!sourcePath) {
+            throw new Error('Could not find skill source files');
+        }
+
+        // Check if skill already exists
+        if (fs.existsSync(skillPath)) {
+            outputChannel.appendLine(`Skill already exists at: ${skillPath}`);
+            if (showMessage) {
+                vscode.window.showInformationMessage(
+                    'AIX Package Porter skill is already installed. Use "Reinstall" to update.'
+                );
+            }
+            return;
+        }
+
+        // Create Bob skills directory if it doesn't exist
+        const bobSkillsDir = path.dirname(skillPath);
+        if (!fs.existsSync(bobSkillsDir)) {
+            fs.mkdirSync(bobSkillsDir, { recursive: true });
+            outputChannel.appendLine(`Created directory: ${bobSkillsDir}`);
+        }
+
+        // Copy skill files
+        copyDirectory(sourcePath, skillPath);
+        outputChannel.appendLine(`Skill installed successfully to: ${skillPath}`);
+
+        // Make scripts executable on Unix-like systems
+        if (process.platform !== 'win32') {
+            makeScriptsExecutable(skillPath);
+        }
+
+        if (showMessage) {
+            vscode.window.showInformationMessage(
+                'AIX Package Porter skill installed successfully! Restart Bob IDE to use the skill.',
+                'Show Details'
+            ).then(selection => {
+                if (selection === 'Show Details') {
+                    showSkillInfo();
+                }
+            });
+        }
+
+    } catch (error) {
+        const errorMsg = `Failed to install skill: ${error.message}`;
+        outputChannel.appendLine(`ERROR: ${errorMsg}`);
+        outputChannel.appendLine(error.stack);
+        vscode.window.showErrorMessage(errorMsg);
+    }
+}
+
+/**
+ * Reinstall the skill (remove and install)
+ */
+function reinstallSkill() {
+    try {
+        const skillPath = getSkillPath();
+        
+        if (fs.existsSync(skillPath)) {
+            outputChannel.appendLine('Removing existing skill...');
+            removeDirectory(skillPath);
+            outputChannel.appendLine('Existing skill removed');
+        }
+
+        installSkill(true);
+    } catch (error) {
+        const errorMsg = `Failed to reinstall skill: ${error.message}`;
+        outputChannel.appendLine(`ERROR: ${errorMsg}`);
+        vscode.window.showErrorMessage(errorMsg);
+    }
+}
+
+/**
+ * Uninstall the skill
+ */
+function uninstallSkill() {
+    try {
+        const skillPath = getSkillPath();
+
+        if (!fs.existsSync(skillPath)) {
+            vscode.window.showInformationMessage('AIX Package Porter skill is not installed.');
+            return;
+        }
+
+        vscode.window.showWarningMessage(
+            'Are you sure you want to uninstall the AIX Package Porter skill?',
+            'Yes', 'No'
+        ).then(selection => {
+            if (selection === 'Yes') {
+                removeDirectory(skillPath);
+                outputChannel.appendLine(`Skill uninstalled from: ${skillPath}`);
+                vscode.window.showInformationMessage('AIX Package Porter skill uninstalled successfully.');
+            }
+        });
+
+    } catch (error) {
+        const errorMsg = `Failed to uninstall skill: ${error.message}`;
+        outputChannel.appendLine(`ERROR: ${errorMsg}`);
+        vscode.window.showErrorMessage(errorMsg);
+    }
+}
+
+/**
+ * Show skill information
+ */
+function showSkillInfo() {
+    const skillPath = getSkillPath();
+    const isInstalled = fs.existsSync(skillPath);
+
+    const info = `
+AIX Package Porter Skill
+
+Status: ${isInstalled ? 'Installed' : 'Not Installed'}
+Installation Path: ${skillPath}
+
+Description:
+Claude skill for porting open-source software to IBM AIX on Power Systems.
+
+Features:
+- Supports AIX 7.1, 7.2, 7.3 on ppc64 (Big Endian)
+- GCC, XLC, and Clang compiler support
+- 19 critical rules to avoid system-breaking mistakes
+- Automated dependency resolution
+- Patch preservation and documentation
+- 7-phase porting workflow
+
+Usage:
+Activate the skill in Bob IDE by mentioning:
+- "Port [package] to AIX"
+- "Build [package] on AIX 7.3"
+- "Help me compile on Power Systems"
+
+Commands:
+- AIX Porter: Install Skill
+- AIX Porter: Reinstall Skill
+- AIX Porter: Uninstall Skill
+- AIX Porter: Show Skill Information
+    `.trim();
+
+    const panel = vscode.window.createWebviewPanel(
+        'aixPorterInfo',
+        'AIX Package Porter',
+        vscode.ViewColumn.One,
+        {}
+    );
+
+    panel.webview.html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {
+                    font-family: var(--vscode-font-family);
+                    padding: 20px;
+                    line-height: 1.6;
+                }
+                h1 { color: var(--vscode-foreground); }
+                pre {
+                    background: var(--vscode-textBlockQuote-background);
+                    padding: 15px;
+                    border-radius: 5px;
+                    white-space: pre-wrap;
+                }
+                .status-installed { color: #4CAF50; font-weight: bold; }
+                .status-not-installed { color: #f44336; font-weight: bold; }
+            </style>
+        </head>
+        <body>
+            <pre>${info}</pre>
+        </body>
+        </html>
+    `;
+}
+
+/**
+ * Get the skill installation path
+ * @returns {string} Skill installation path
+ */
+function getSkillPath() {
+    const config = vscode.workspace.getConfiguration('aixPorter');
+    const customPath = config.get('skillPath', '');
+
+    if (customPath) {
+        return path.join(customPath, SKILL_NAME);
+    }
+
+    const homeDir = os.homedir();
+    return path.join(homeDir, '.bob', 'skills', SKILL_NAME);
+}
+
+/**
+ * Get the source path for skill files
+ * @returns {string|null} Source path or null if not found
+ */
+function getSourcePath() {
+    const extensionPath = __dirname;
+    const sourcePath = path.join(extensionPath, 'skills', SKILL_NAME);
+
+    if (fs.existsSync(sourcePath)) {
+        return sourcePath;
+    }
+
+    outputChannel.appendLine(`Source path not found: ${sourcePath}`);
+    return null;
+}
+
+/**
+ * Copy directory recursively
+ * @param {string} src - Source directory
+ * @param {string} dest - Destination directory
+ */
+function copyDirectory(src, dest) {
+    if (!fs.existsSync(src)) {
+        throw new Error(`Source directory does not exist: ${src}`);
+    }
+
+    // Create destination directory
+    if (!fs.existsSync(dest)) {
+        fs.mkdirSync(dest, { recursive: true });
+    }
+
+    // Read source directory
+    const entries = fs.readdirSync(src, { withFileTypes: true });
+
+    for (const entry of entries) {
+        const srcPath = path.join(src, entry.name);
+        const destPath = path.join(dest, entry.name);
+
+        if (entry.isDirectory()) {
+            copyDirectory(srcPath, destPath);
+        } else {
+            fs.copyFileSync(srcPath, destPath);
+        }
+    }
+}
+
+/**
+ * Remove directory recursively
+ * @param {string} dirPath - Directory to remove
+ */
+function removeDirectory(dirPath) {
+    if (!fs.existsSync(dirPath)) {
+        return;
+    }
+
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+
+    for (const entry of entries) {
+        const fullPath = path.join(dirPath, entry.name);
+
+        if (entry.isDirectory()) {
+            removeDirectory(fullPath);
+        } else {
+            fs.unlinkSync(fullPath);
+        }
+    }
+
+    fs.rmdirSync(dirPath);
+}
+
+/**
+ * Make shell scripts executable
+ * @param {string} skillPath - Skill installation path
+ */
+function makeScriptsExecutable(skillPath) {
+    const scriptsDir = path.join(skillPath, 'scripts');
+
+    if (!fs.existsSync(scriptsDir)) {
+        return;
+    }
+
+    try {
+        const scripts = fs.readdirSync(scriptsDir);
+        
+        for (const script of scripts) {
+            if (script.endsWith('.sh')) {
+                const scriptPath = path.join(scriptsDir, script);
+                fs.chmodSync(scriptPath, 0o755);
+                outputChannel.appendLine(`Made executable: ${scriptPath}`);
+            }
+        }
+    } catch (error) {
+        outputChannel.appendLine(`Warning: Could not make scripts executable: ${error.message}`);
+    }
+}
+
+/**
+ * Deactivate the extension
+ */
+function deactivate() {
+    if (outputChannel) {
+        outputChannel.appendLine('AIX Package Porter extension deactivated');
+        outputChannel.dispose();
+    }
+}
+
+module.exports = {
+    activate,
+    deactivate
+};
+
+// Made with Bob
