@@ -1,12 +1,13 @@
 {
   "name": "aix-package-porter",
   "displayName": "AIX Package Porter",
-  "description": "Installs and manages the AIX Package Porter skill for Bob IDE (VS Code fork)",
+  "description": "Installs and manages the AIX Package Porter skill for Bob IDE",
   "version": "0.0.1",
-  "publisher": "your-publisher-name",
-  "icon": "icon.png",
+  "publisher": "prajwalbmehendarkar",
+  "icon": "aix-icon.png",
   "engines": {
-    "vscode": "^1.80.0"
+    "vscode": "^1.80.0",
+    "vscodium": "^1.105.0"
   },
   "categories": [
     "Other",

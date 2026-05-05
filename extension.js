@@ -11,6 +11,7 @@ const os = require('os');
 // Extension state
 let outputChannel;
 const SKILL_NAME = 'aix-package-porter';
+const MODE_FILE_NAME = 'custom_modes.yaml';
 
 /**
  * Activate the extension
@@ -25,10 +26,19 @@ function activate(context) {
     const config = vscode.workspace.getConfiguration('aixPorter');
     const autoInstall = config.get('autoInstall', true);
 
-    // Auto-install skill if enabled
+    // Auto-install resources if enabled
     if (autoInstall) {
-        installSkill(false);
+        installSkill(true);
     }
+
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration(event => {
+            if (event.affectsConfiguration('remote.SSH.remotePlatform')) {
+                outputChannel.appendLine('Remote SSH configuration changed, reinstalling AIX Porter resources...');
+                installSkill(true);
+            }
+        })
+    );
 
     // Register commands
     context.subscriptions.push(
@@ -65,7 +75,7 @@ function activate(context) {
  */
 function installSkill(showMessage = true) {
     try {
-        outputChannel.appendLine('Starting skill installation...');
+        outputChannel.appendLine('Starting skill and mode installation...');
 
         // Get skill installation path
         const skillPath = getSkillPath();
@@ -79,15 +89,16 @@ function installSkill(showMessage = true) {
             throw new Error('Could not find skill source files');
         }
 
-        // Check if skill already exists
-        if (fs.existsSync(skillPath)) {
+        const skillExists = fs.existsSync(skillPath);
+        const modeFilePath = getModeFilePath();
+        const modeExists = fs.existsSync(modeFilePath) && fs.statSync(modeFilePath).size > 0;
+
+        if (skillExists) {
             outputChannel.appendLine(`Skill already exists at: ${skillPath}`);
-            if (showMessage) {
-                vscode.window.showInformationMessage(
-                    'AIX Package Porter skill is already installed. Use "Reinstall" to update.'
-                );
-            }
-            return;
+        }
+
+        if (modeExists) {
+            outputChannel.appendLine(`Mode already exists at: ${modeFilePath}`);
         }
 
         // Create Bob skills directory if it doesn't exist
@@ -97,18 +108,28 @@ function installSkill(showMessage = true) {
             outputChannel.appendLine(`Created directory: ${bobSkillsDir}`);
         }
 
-        // Copy skill files
-        copyDirectory(sourcePath, skillPath);
-        outputChannel.appendLine(`Skill installed successfully to: ${skillPath}`);
+        // Copy skill files if needed
+        if (!skillExists) {
+            copyDirectory(sourcePath, skillPath);
+            outputChannel.appendLine(`Skill installed successfully to: ${skillPath}`);
+        } else {
+            outputChannel.appendLine(`Skill already installed at: ${skillPath}`);
+        }
+
+        installProjectMode();
+        outputChannel.appendLine(`AIX Porter mode installed successfully to: ${modeFilePath}`);
+
+        vscode.window.showInformationMessage(`AIX Package Porter skill is installed at ${skillPath}`);
+        vscode.window.showInformationMessage(`AIX Porter mode is installed at ${modeFilePath}`);
 
         // Make scripts executable on Unix-like systems
-        if (process.platform !== 'win32') {
+        if (!skillExists && process.platform !== 'win32') {
             makeScriptsExecutable(skillPath);
         }
 
         if (showMessage) {
             vscode.window.showInformationMessage(
-                'AIX Package Porter skill installed successfully! Restart Bob IDE to use the skill.',
+                'AIX Package Porter resources installed successfully! Restart Bob IDE to use the skill and mode.',
                 'Show Details'
             ).then(selection => {
                 if (selection === 'Show Details') {
@@ -118,7 +139,7 @@ function installSkill(showMessage = true) {
         }
 
     } catch (error) {
-        const errorMsg = `Failed to install skill: ${error.message}`;
+        const errorMsg = `Failed to install skill and mode: ${error.message}`;
         outputChannel.appendLine(`ERROR: ${errorMsg}`);
         outputChannel.appendLine(error.stack);
         vscode.window.showErrorMessage(errorMsg);
@@ -154,6 +175,7 @@ function uninstallSkill() {
         const skillPath = getSkillPath();
 
         if (!fs.existsSync(skillPath)) {
+            uninstallProjectMode();
             vscode.window.showInformationMessage('AIX Package Porter skill is not installed.');
             return;
         }
@@ -164,6 +186,7 @@ function uninstallSkill() {
         ).then(selection => {
             if (selection === 'Yes') {
                 removeDirectory(skillPath);
+                uninstallProjectMode();
                 outputChannel.appendLine(`Skill uninstalled from: ${skillPath}`);
                 vscode.window.showInformationMessage('AIX Package Porter skill uninstalled successfully.');
             }
@@ -262,6 +285,45 @@ function getSkillPath() {
 
     const homeDir = os.homedir();
     return path.join(homeDir, '.bob', 'skills', SKILL_NAME);
+}
+
+function getModeFilePath() {
+    const homeDir = os.homedir();
+    return path.join(homeDir, '.bob', 'settings', MODE_FILE_NAME);
+}
+
+function getBundledModeSourcePath() {
+    return path.join(__dirname, '.bob', MODE_FILE_NAME);
+}
+
+function installProjectMode() {
+    const sourcePath = getBundledModeSourcePath();
+    if (!fs.existsSync(sourcePath)) {
+        outputChannel.appendLine(`Bundled mode file not found: ${sourcePath}`);
+        return;
+    }
+
+    const modeFilePath = getModeFilePath();
+    const modeDir = path.dirname(modeFilePath);
+
+    if (!fs.existsSync(modeDir)) {
+        fs.mkdirSync(modeDir, { recursive: true });
+        outputChannel.appendLine(`Created mode settings directory: ${modeDir}`);
+    }
+
+    fs.copyFileSync(sourcePath, modeFilePath);
+    outputChannel.appendLine(`Installed AIX Porter mode to: ${modeFilePath}`);
+}
+
+function uninstallProjectMode() {
+    const modeFilePath = getModeFilePath();
+
+    if (!fs.existsSync(modeFilePath)) {
+        return;
+    }
+
+    fs.unlinkSync(modeFilePath);
+    outputChannel.appendLine(`Removed AIX Porter mode file: ${modeFilePath}`);
 }
 
 /**
