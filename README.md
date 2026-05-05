@@ -115,7 +115,6 @@ The installed skill includes:
 - **SKILL.md** - Main skill instructions with 7-phase porting workflow
 - **AIX_CRITICAL_MISTAKES.md** - 19 critical rules to avoid system-breaking errors
 - **REFERENCE.md** - Technical reference for AIX-specific issues
-- **FORMS.md** - Porting checklist and documentation templates
 
 ### Helper Scripts
 - **check_and_install_dependency.sh** - Automated dependency resolution
@@ -139,9 +138,9 @@ The installed skill includes:
 - **Mode**: 64-bit only (OBJECT_MODE=64)
 
 ### Compiler Support
-1. **GCC** (Recommended) - GCC 10+ from AIX Toolbox
-2. **XLC** (Legacy) - IBM XL C/C++ compiler
-3. **Clang** (Experimental) - Clang 14+ with LLVM
+1. **GCC** (Recommended) - GCC 10.5.0+ from AIX Toolbox
+2. **IBM Open XL C/C++** (Recommended Alternative) - IBM Open XL C/C++ 17.1.2+ using LLVM/Clang-style flags
+3. **Clang/LLVM** (Experimental) - Clang 14+ if available
 
 ### Core Workflow
 1. **Discovery** - Check IBM Toolbox, analyze build system, resolve dependencies
