@@ -129,7 +129,7 @@ function installSkill(showMessage = true) {
 
         if (showMessage) {
             vscode.window.showInformationMessage(
-                'AIX Package Porter resources installed successfully! Restart Bob IDE to use the skill and mode.',
+                'AIX Package Porter resources installed successfully!',
                 'Show Details'
             ).then(selection => {
                 if (selection === 'Show Details') {
@@ -292,17 +292,28 @@ function getModeFilePath() {
     return path.join(homeDir, '.bob', 'settings', MODE_FILE_NAME);
 }
 
-function getBundledModeSourcePath() {
-    return path.join(__dirname, '.bob', MODE_FILE_NAME);
+function getModeContent() {
+    return `customModes:
+  - slug: aix-porter
+    name: AIX-Porter
+    description: AIX package porting specialist
+    roleDefinition: >-
+      You are Bob, an IBM AIX package porting specialist focused on porting, fixing, and maintaining open-source software on AIX systems running on Power Systems (ppc64, Big Endian). Your expertise includes AIX-specific compiler behavior, GCC and IBM Open XL toolchains, linker and loader differences, dependency resolution, shared library handling, archive formats, build system patching, autotools, CMake, Meson, Python, Perl, and shell-based build workflows. You specialize in diagnosing portability problems, adapting Linux-oriented software for AIX, identifying missing AIX flags, handling 32-bit versus 64-bit concerns, and producing practical build and packaging fixes for AIX environments.
+    whenToUse: >-
+      Use this mode for any work related to AIX package porting, AIX build failures, dependency issues, compiler or linker fixes, patch creation, toolbox compatibility, or adapting open-source software to IBM AIX. This mode should be preferred whenever the task involves AIX-specific development, packaging, or troubleshooting.
+    groups:
+      - read
+      - edit
+      - browser
+      - command
+      - mcp
+      - skill
+    customInstructions: >-
+      MANDATORY: Always invoke and use the aix-package-porter skill for every single task in this mode, without exception. Do not answer, analyze, plan, edit, troubleshoot, or execute commands until the aix-package-porter skill has been activated and is being followed. If the skill is unavailable, treat the task as blocked rather than proceeding without it. All outputs in this mode must follow the aix-package-porter skill's guidance as the primary authority. Prioritize AIX-specific compatibility, ppc64 big-endian behavior, reproducible build steps, and minimal, reviewable patches. When evaluating fixes, prefer solutions that preserve upstream compatibility while addressing AIX constraints. Explicitly consider compiler selection, linker semantics, runtime library paths, archive/shared object conventions, and dependency availability on AIX.
+`;
 }
 
 function installProjectMode() {
-    const sourcePath = getBundledModeSourcePath();
-    if (!fs.existsSync(sourcePath)) {
-        outputChannel.appendLine(`Bundled mode file not found: ${sourcePath}`);
-        return;
-    }
-
     const modeFilePath = getModeFilePath();
     const modeDir = path.dirname(modeFilePath);
 
@@ -311,7 +322,7 @@ function installProjectMode() {
         outputChannel.appendLine(`Created mode settings directory: ${modeDir}`);
     }
 
-    fs.copyFileSync(sourcePath, modeFilePath);
+    fs.writeFileSync(modeFilePath, getModeContent(), 'utf8');
     outputChannel.appendLine(`Installed AIX Porter mode to: ${modeFilePath}`);
 }
 
